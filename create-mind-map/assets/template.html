@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="silk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>learnmap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<style>
+  body { font-family: "IBM Plex Sans Thai", system-ui, sans-serif; overflow: hidden; }
+  code, pre { font-family: "IBM Plex Mono", monospace; }
+  .prose-lm { line-height: 1.75; min-width: 0; }
+  .prose-lm h1, .prose-lm h2, .prose-lm h3 { font-weight: 600; margin: 1.2em 0 .5em; }
+  .prose-lm h2 { font-size: 1.12rem; } .prose-lm h3 { font-size: 1rem; }
+  .prose-lm p, .prose-lm ul, .prose-lm ol, .prose-lm table, .prose-lm pre { margin: .6em 0; }
+  .prose-lm ul { list-style: disc; padding-left: 1.4em; }
+  .prose-lm ol { list-style: decimal; padding-left: 1.4em; }
+  .prose-lm pre { background: var(--color-base-200); padding: .8em 1em; border-radius: .5rem; overflow-x: auto; font-size: .82rem; line-height: 1.5; }
+  .prose-lm code:not(pre code) { background: var(--color-base-200); padding: .1em .35em; border-radius: .3rem; font-size: .88em; }
+  .prose-lm table { border-collapse: collapse; display: block; overflow-x: auto; font-size: .88rem; }
+  .prose-lm th, .prose-lm td { border: 1px solid var(--color-base-300); padding: .35em .6em; text-align: left; vertical-align: top; }
+  .prose-lm th { background: var(--color-base-200); font-weight: 600; }
+  .prose-lm a { color: var(--color-primary); text-decoration: underline; }
+
+  #canvas { cursor: grab; }
+  #canvas:active { cursor: grabbing; }
+  .link { fill: none; stroke-width: 2.2; stroke-linecap: round; opacity: .55; }
+  .xlink { fill: none; stroke-width: 2; stroke-dasharray: 7 5; opacity: .75; }
+  .xlink.dim { opacity: .18; }
+  .xlink-label { font-size: 12px; font-weight: 600; paint-order: stroke; stroke: var(--color-base-100); stroke-width: 5px; stroke-linejoin: round; cursor: pointer; }
+  .xlink-label.hidden-label { display: none; }
+  .xlink-label.hover { display: inline; }
+  .xlink-hit { fill: none; stroke: transparent; stroke-width: 12; cursor: pointer; }
+  .recall-hide { filter: blur(7px); user-select: none; pointer-events: none; }
+  .node { cursor: pointer; }
+  .node rect.pill { stroke-width: 1.6; transition: filter .15s; }
+  .node:hover rect.pill { filter: brightness(.96) drop-shadow(0 2px 4px rgb(0 0 0 / .12)); }
+  .node text { font-size: 14px; dominant-baseline: central; pointer-events: none; }
+  .node.root text { font-size: 18px; font-weight: 600; }
+  .node.stub text { opacity: .65; }
+  .node.active rect.pill { stroke-width: 3.2; }
+  .node.read rect.pill { fill: var(--color-base-300) !important; stroke-dasharray: 4 3; }
+  .node.read text.label { opacity: .55; }
+  .node .readmark { font-size: 12px; font-weight: 700; fill: var(--color-success); }
+  .node .toggle { cursor: pointer; }
+  .node .toggle text { font-size: 11px; font-weight: 600; }
+
+  .dot { flex: none; width: .55rem; height: .55rem; border-radius: 999px; display: inline-block; transform: translateY(-1px); }
+  .dot.expanded { background: var(--color-primary); }
+  .dot.stub { border: 1.5px solid currentColor; opacity: .6; }
+  .dot.known { background: var(--color-success); }
+  #selbar { position: fixed; display: none; z-index: 60; gap: 4px; }
+  mark.hl { background: #fde68a; color: inherit; border-radius: 2px; padding: 0 1px; cursor: pointer; }
+  mark.hl.has-note { box-shadow: inset 0 -2px 0 #d97706; }
+  .hlbadge circle { fill: #fbbf24; stroke: var(--color-base-100); stroke-width: 1.5; }
+  .hlbadge text { font-size: 10px; font-weight: 700; fill: #78350f; }
+  .note-card { border-left: 4px solid var(--src-color, #fbbf24); }
+  .note-card.focus { outline: 2px solid #f59e0b; }
+  #panel { transition: transform .2s ease; }
+  #panel.closed { transform: translateX(100%); }
+</style>
+</head>
+<body class="bg-base-100 text-base-content">
+<script id="map-data" type="application/json">/*__MAP_DATA__*/null</script>
+
+<div class="relative h-screen w-screen">
+  <svg id="canvas" class="absolute inset-0 w-full h-full bg-base-200/40"></svg>
+
+  <div class="absolute top-3 left-3 bg-base-100/90 backdrop-blur rounded-box border border-base-300 px-4 py-3 max-w-sm shadow-sm">
+    <div class="text-xs opacity-60">learnmap</div>
+    <div id="map-title" class="font-semibold leading-tight"></div>
+    <div id="map-context" class="text-xs opacity-60 mt-1"></div>
+    <div class="text-[10px] opacity-40 mt-1">render: /*__RENDERED__*/</div>
+    <div id="map-stats" class="text-xs mt-2 flex flex-wrap gap-x-3 gap-y-1"></div>
+    <div class="relative mt-2">
+      <input id="search-input" type="search" class="input input-sm w-full" placeholder="ค้นหาใน map… (กด / )" autocomplete="off"
+             oninput="runSearch(this.value)" onkeydown="searchKey(event)">
+      <div id="search-results" class="hidden absolute left-0 right-0 mt-1 z-40 bg-base-100 border border-base-300 rounded-box shadow-lg max-h-80 overflow-y-auto text-sm"></div>
+    </div>
+    <div class="flex gap-1 mt-2">
+      <button class="btn btn-xs" onclick="fitView()">พอดีจอ</button>
+      <button class="btn btn-xs" onclick="setAllOpen(true)">กางทั้งหมด</button>
+      <button class="btn btn-xs" onclick="setAllOpen(false)">พับ</button>
+      <button id="dock-btn" class="btn btn-xs btn-warning btn-soft" onclick="toggleDock()">โน้ต <span id="hl-count-top">0</span></button>
+      <label class="label text-xs ml-1 cursor-pointer"><input id="links-toggle" type="checkbox" class="toggle toggle-xs" onchange="setAllLinks(this.checked)"> ทุกเส้นเชื่อม</label>
+      <label class="label text-xs ml-1 cursor-pointer"><input id="recall-toggle" type="checkbox" class="toggle toggle-xs" onchange="setRecall(this.checked)"> โหมดทบทวน</label>
+    </div>
+  </div>
+  <aside id="notes-dock" class="hidden absolute left-3 top-[250px] bottom-14 w-[340px] bg-base-100/95 backdrop-blur border border-base-300 rounded-box shadow-sm flex flex-col min-h-0 z-10">
+    <div class="px-3 pt-3 pb-2 border-b border-base-300">
+      <div class="flex items-center gap-2">
+        <span class="font-semibold">โน้ตและไฮไลต์</span>
+        <span id="hl-count" class="badge badge-sm badge-warning">0</span>
+        <span class="flex-1"></span>
+        <button class="btn btn-ghost btn-xs btn-square" onclick="toggleDock(false)" aria-label="ปิดโน้ต">✕</button>
+      </div>
+      <input id="hl-filter" class="input input-xs w-full mt-2" placeholder="กรองโน้ต…" oninput="renderNotes()">
+      <div class="flex flex-wrap gap-1 items-center mt-2">
+        <label class="label text-xs cursor-pointer"><input id="hl-only-node" type="checkbox" class="checkbox checkbox-xs" onchange="renderNotes()"> เฉพาะกล่องที่เปิดอยู่</label>
+        <span class="flex-1"></span>
+        <button class="btn btn-xs" onclick="exportNotes('copy')">คัดลอก md</button>
+        <button class="btn btn-xs" onclick="exportNotes('download')">ดาวน์โหลด</button>
+      </div>
+    </div>
+    <div id="hl-list" class="flex-1 overflow-y-auto p-3 flex flex-col gap-2"></div>
+  </aside>
+
+  <div class="absolute bottom-3 left-3 text-xs opacity-70 bg-base-100/90 rounded-box border border-base-300 px-3 py-2 flex gap-3">
+    <span><span class="dot expanded"></span> มีเนื้อหา</span>
+    <span><span class="dot stub"></span> stub</span>
+    <span><span class="dot known"></span> รู้แล้ว</span>
+    <span class="text-success font-semibold">✓ อ่านแล้ว (กล่องสีเทา เส้นประ · กด m)</span>
+    <span class="text-error font-semibold">! fact check พบจุดผิด</span>
+    <span>- - → เส้นเชื่อมข้ามกิ่ง (สีตามกิ่งต้นทาง · ป้ายแสดงเฉพาะของ node ที่เลือก · ชี้ที่เส้นเพื่อดูป้าย)</span>
+    <span>ลากหรือ scroll สองนิ้วเพื่อเลื่อน · pinch หรือ ⌘+scroll เพื่อซูม · ลูกศร / + −</span>
+  </div>
+
+  <aside id="panel" class="closed absolute top-0 right-0 h-full w-[min(560px,92vw)] bg-base-100 border-l border-base-300 shadow-xl flex flex-col min-h-0">
+    <div class="flex items-start gap-2 px-6 pt-5">
+      <div class="flex-1 min-w-0">
+        <div id="crumbs" class="breadcrumbs text-xs opacity-60 p-0"></div>
+        <h1 id="node-title" class="text-xl font-semibold mt-1"></h1>
+      </div>
+      <span id="node-kind" class="badge badge-soft mt-6"></span>
+      <button class="btn btn-sm btn-ghost btn-square mt-4" onclick="closePanel()" aria-label="ปิด">✕</button>
+    </div>
+    <div id="tab-content" class="flex-1 overflow-y-auto px-6 pb-6">
+      <p id="node-summary" class="mt-1 opacity-80"></p>
+      <div id="recall-cover" class="alert alert-soft alert-info mt-3 hidden">
+        <span>โหมดทบทวน: ลองนึกหรือเขียนอธิบาย node นี้เองก่อน แล้วค่อยกดเปิดดู</span>
+        <button class="btn btn-xs" onclick="revealBody()">เปิดดูเนื้อหา</button>
+      </div>
+      <div id="correction-box" class="hidden mt-3 rounded-box border-l-4 border-warning bg-warning/10 px-4 py-3 text-sm"></div>
+      <div id="node-body" class="prose-lm mt-3"></div>
+      <div id="stub-box" class="alert alert-soft mt-4 hidden">
+        <span>node นี้ยังเป็น stub กด <b>อธิบาย node นี้</b> เพื่อให้เขียนเนื้อหา</span>
+      </div>
+      <div id="work-box" class="mt-5 hidden rounded-box border-l-4 border-accent bg-base-200 px-4 py-3">
+        <div class="text-xs font-semibold opacity-70 mb-1">โยงกับงานเรา</div>
+        <div id="node-work" class="prose-lm"></div>
+      </div>
+      <div id="quiz-box" class="mt-5 hidden">
+        <textarea id="quiz-answer" class="textarea w-full h-28" placeholder="พิมพ์คำตอบของคุณ แล้วกดส่งให้ตรวจ"></textarea>
+        <button class="btn btn-primary btn-sm mt-2" onclick="sendQuizAnswer()">ส่งคำตอบให้ตรวจ</button>
+      </div>
+      <div id="links-box" class="mt-5 hidden">
+        <div class="text-xs font-semibold opacity-70 mb-1">เชื่อมกับกิ่งอื่น</div>
+        <div id="links-list" class="flex flex-col gap-1 text-sm"></div>
+      </div>
+      <details id="explain-box" class="collapse collapse-arrow border border-base-300 bg-base-100 mt-5">
+        <summary class="collapse-title text-sm font-medium">อธิบายเองก่อน (แล้วให้ Claude ตรวจ)</summary>
+        <div class="collapse-content">
+          <p class="text-xs opacity-70 mb-2">เขียนด้วยคำของตัวเองว่า node นี้คืออะไร ทำไมสำคัญ และเกี่ยวกับกิ่งอื่นยังไง ไม่ต้องถูกทั้งหมด Claude จะบอกว่าตรงไหนถูก ขาด หรือเข้าใจผิด</p>
+          <textarea id="explain-input" class="textarea w-full h-28" placeholder="ในความเข้าใจของฉัน..."></textarea>
+          <button class="btn btn-primary btn-sm mt-2" onclick="sendExplain()">ส่งให้ตรวจ</button>
+        </div>
+      </details>
+      <div id="sources" class="mt-5 text-xs opacity-70"></div>
+      <div id="fc-box" class="mt-3"></div>
+      <div class="divider my-3"></div>
+      <div id="actions" class="flex flex-wrap gap-2"></div>
+      <div class="join mt-3 w-full">
+        <input id="compare-input" class="input input-sm join-item flex-1" placeholder="เทียบกับ… (เช่น BigQuery)">
+        <button class="btn btn-sm join-item" onclick="sendCompare()">เทียบ</button>
+      </div>
+      <div class="join mt-2 w-full">
+        <input id="ask-input" class="input input-sm join-item flex-1" placeholder="ถามเพิ่มเกี่ยวกับ node นี้…">
+        <button class="btn btn-sm join-item" onclick="sendAsk()">ถาม</button>
+      </div>
+      <p class="text-xs opacity-60 mt-2">ทุกปุ่มจะคัดลอกคำสั่งไว้ให้ วางในแชท Claude แล้ว refresh หน้านี้ · เลือกคำหรือประโยคตรงไหนก็ได้ในแผงนี้ แล้วกด "อธิบายคำนี้" เพื่อแตกเป็น node ใหม่</p>
+    </div>
+  </aside>
+</div>
+
+<div id="selbar">
+  <button id="selhl" class="btn btn-xs btn-warning shadow" onmousedown="event.preventDefault()" onclick="addHighlight()">ไฮไลต์</button>
+  <button id="selbtn" class="btn btn-xs btn-primary shadow" onmousedown="event.preventDefault()" onclick="sendTerm()">อธิบายคำนี้</button>
+</div>
+<div id="toast" class="toast toast-start toast-top hidden z-50"><div class="alert alert-info text-sm max-w-md"><span id="toast-text"></span></div></div>
+
+<script>
+const MAP = JSON.parse(document.getElementById("map-data").textContent || "null");
+const KIND_LABEL = { root: "หัวข้อหลัก", concept: "แนวคิด", mechanism: "กลไก", example: "ตัวอย่าง",
+  rationale: "ทำไม", compare: "เปรียบเทียบ", quiz: "ทดสอบ", feedback: "ผลตรวจ", correction: "แก้ไข",
+  term: "คำศัพท์", factcheck: "fact check" };
+const BRANCH_COLORS = ["#4f7cff", "#e8743b", "#19a979", "#d64f8b", "#8e6cef", "#c9a227", "#2bb3c0", "#e04f4f", "#6b8e23", "#a0522d"];
+const STORE_KEY = `learnmap:${MAP.slug}:open`;
+const fcOf = n => (n.fact_check && n.fact_check.status) || "unchecked";
+// fact-check nodes live in the panel of the node they check, not on the map
+const kidsOf = id => MAP.nodes[id].children.filter(c => MAP.nodes[c].kind !== "factcheck");
+let current = null;
+let selectedText = "";
+let openSet = new Set(JSON.parse(localStorage.getItem(STORE_KEY) || "null") || [MAP.root]);
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function md(s) { return s ? marked.parse(s) : ""; }
+function pathTo(id) { const out = []; for (let c = id; c != null; c = MAP.nodes[c].parent) out.unshift(c); return out; }
+function saveOpen() { localStorage.setItem(STORE_KEY, JSON.stringify([...openSet])); }
+
+// ---------- mind map ----------
+const svg = d3.select("#canvas");
+const world = svg.append("g");
+const xlayer = world.append("g");
+const defs = svg.append("defs");
+let showAllLinks = localStorage.getItem(`learnmap:${MAP.slug}:alllinks`) === "1";
+
+function arrowFor(color) {
+  const id = "arr-" + String(color).replace(/[^a-z0-9]/gi, "");
+  if (defs.select("#" + id).empty()) {
+    defs.append("marker").attr("id", id).attr("viewBox", "0 0 10 10").attr("refX", 9).attr("refY", 5)
+      .attr("markerWidth", 7).attr("markerHeight", 7).attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,0 L10,5 L0,10 z").attr("fill", color);
+  }
+  return `url(#${id})`;
+}
+
+function drawCrossLinks(pos, colorOf) {
+  const center = n => n.id === MAP.root ? [0, 0] : [n.x + n.w / 2, n.y];
+  // a folded end points at its nearest visible ancestor so the link stays discoverable
+  const visibleEnd = id => { let c = id; while (c != null && !pos[c]) c = MAP.nodes[c].parent; return c; };
+  const touches = l => current && (l.from === current || l.to === current);
+  const chosen = (MAP.links || []).filter(l => showAllLinks || touches(l));
+  const placed = [];
+  const xl = chosen.map(l => ({ ...l, a: visibleEnd(l.from), b: visibleEnd(l.to) }))
+    .filter(l => l.a && l.b && l.a !== l.b && l.a !== MAP.root && l.b !== MAP.root)
+    // in show-all mode a link whose end is folded would pile onto a hub node, so leave it out
+    .filter(l => touches(l) || (l.a === l.from && l.b === l.to))
+    .map(l => {
+      const folded = l.a !== l.from || l.b !== l.to;
+      const [x1, y1] = center(pos[l.a]), [x2, y2] = center(pos[l.b]);
+      // bend away from the root so links stop piling up over the middle of the map
+      let mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      let ox = mx, oy = my;
+      if (Math.abs(mx) < 80) { ox = 0; oy = my === 0 ? -1 : my; }
+      const len = Math.hypot(ox, oy) || 1;
+      const bend = 60 + Math.hypot(x2 - x1, y2 - y1) * 0.22;
+      const cx = mx + ox / len * bend, cy = my + oy / len * bend;
+      const color = colorOf[l.from] || "#888";
+      const focus = touches(l);
+      // label sits at the curve midpoint, nudged up/down until it no longer overlaps another label
+      const lx = 0.25 * x1 + 0.5 * cx + 0.25 * x2;
+      let ly = 0.25 * y1 + 0.5 * cy + 0.25 * y2;
+      const text = folded ? `${l.label} ⋯` : l.label;
+      measureCtx.font = `600 12px "IBM Plex Sans Thai", sans-serif`;
+      const w = measureCtx.measureText(text).width + 8, h = 16;
+      const hit = y => placed.some(b => Math.abs(b.x - lx) < (b.w + w) / 2 && Math.abs(b.y - y) < h);
+      // labels show only for links of the selected node; others appear on hover
+      let crowded = !focus;
+      if (focus) {
+        const dy = [0, -18, 18, -36, 36, -54, 54, -72, 72, -90, 90].find(d => !hit(ly + d));
+        if (dy === undefined) crowded = true; else { ly += dy; placed.push({ x: lx, y: ly, w }); }
+      }
+      return { ...l, folded, focus, crowded, color, text, d: `M${x1},${y1} Q${cx},${cy} ${x2},${y2}`, lx, ly };
+    });
+  const dimmed = d => d.folded || (showAllLinks && current && !d.focus);
+  xlayer.selectAll("path.xlink").data(xl, d => d.id).join("path")
+    .attr("class", d => "xlink" + (dimmed(d) ? " dim" : "")).attr("d", d => d.d)
+    .attr("stroke", d => d.color).attr("marker-end", d => arrowFor(d.color));
+  const labelOf = id => xlayer.selectAll("text.xlink-label").filter(d => d.id === id);
+  xlayer.selectAll("path.xlink-hit").data(xl, d => d.id).join("path").attr("class", "xlink-hit").attr("d", d => d.d)
+    .on("mouseenter", (e, d) => labelOf(d.id).classed("hover", true).raise())
+    .on("mouseleave", (e, d) => labelOf(d.id).classed("hover", false))
+    .on("click", (e, d) => { e.stopPropagation(); select(d.from === current ? d.to : d.from); })
+    .selectAll("title").data(d => [d]).join("title").text(d => `${MAP.nodes[d.from].title} --${d.label}--> ${MAP.nodes[d.to].title}: ${d.why}`);
+  xlayer.selectAll("text.xlink-label").data(xl, d => d.id).join(enter => enter.append("text").call(t => t.append("title")))
+    .attr("class", d => "xlink-label" + (d.crowded ? " hidden-label" : "")).attr("x", d => d.lx).attr("y", d => d.ly)
+    .attr("text-anchor", "middle").attr("fill", d => d.color)
+    .on("click", (e, d) => { e.stopPropagation(); select(d.from === current ? d.to : d.from); })
+    .text(d => d.text).select("title")
+    .text(d => `${MAP.nodes[d.from].title} → ${MAP.nodes[d.to].title}: ${d.why}`);
+}
+
+function setAllLinks(on) {
+  showAllLinks = on; localStorage.setItem(`learnmap:${MAP.slug}:alllinks`, on ? "1" : "0"); redraw();
+}
+const READ_KEY = `learnmap:${MAP.slug}:read`;
+let readSet = new Set(JSON.parse(localStorage.getItem(READ_KEY) || "[]"));
+function toggleRead(id = current) {
+  if (!id) return;
+  readSet.has(id) ? readSet.delete(id) : readSet.add(id);
+  localStorage.setItem(READ_KEY, JSON.stringify([...readSet]));
+  renderNode(); redraw();
+}
+let recallMode = localStorage.getItem(`learnmap:${MAP.slug}:recall`) === "1";
+const revealed = new Set();
+const zoom = d3.zoom().scaleExtent([0.2, 2.5]).on("zoom", e => world.attr("transform", e.transform));
+// mouse drag pans; on a trackpad two-finger scroll pans and pinch (or cmd/ctrl + wheel) zooms
+zoom.filter(e => e.type !== "wheel" && !e.button);
+svg.call(zoom).on("dblclick.zoom", null);
+document.getElementById("canvas").addEventListener("wheel", e => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) {
+    const k = Math.pow(2, -e.deltaY * (e.deltaMode ? 0.05 : 0.002) * (e.ctrlKey ? 5 : 1));
+    zoom.scaleBy(svg, k, d3.pointer(e, svg.node()));
+  } else {
+    const unit = e.deltaMode === 1 ? 16 : 1;
+    const shiftX = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
+    const shiftY = e.shiftKey && !e.deltaX ? 0 : e.deltaY;
+    const t = d3.zoomTransform(svg.node());
+    zoom.translateBy(svg, -shiftX * unit / t.k, -shiftY * unit / t.k);
+  }
+}, { passive: false });
+document.addEventListener("keydown", e => {
+  if (["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+  const step = 80, t = d3.zoomTransform(svg.node());
+  const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+  if (moves[e.key]) { e.preventDefault(); zoom.translateBy(svg, moves[e.key][0] / t.k, moves[e.key][1] / t.k); }
+  if (e.key === "m" && current) { toggleRead(); return; }
+  if (e.key === "+" || e.key === "=") zoom.scaleBy(svg, 1.2);
+  if (e.key === "-") zoom.scaleBy(svg, 1 / 1.2);
+});
+const measureCtx = document.createElement("canvas").getContext("2d");
+const PAD_X = 16, H = 34, ROOT_H = 48, V_GAP = 14, H_GAP = 56, MAX_LABEL = 36;
+
+function label(n) { const t = n.title; return t.length > MAX_LABEL ? t.slice(0, MAX_LABEL - 1) + "…" : t; }
+function textWidth(s, root) {
+  measureCtx.font = `${root ? 600 : 400} ${root ? 18 : 14}px "IBM Plex Sans Thai", sans-serif`;
+  return measureCtx.measureText(s).width;
+}
+
+function buildSide(ids, colorOf) {
+  // hierarchy for one side of the root; collapsed nodes keep their children hidden
+  const make = id => {
+    const n = MAP.nodes[id];
+    const kids = (openSet.has(id) || tempOpen.has(id)) ? kidsOf(id).map(make) : [];
+    return { id, children: kids.length ? kids : undefined };
+  };
+  return { id: "__side", children: ids.map(make) };
+}
+
+function layoutSide(sideData, dir) {
+  const h = d3.hierarchy(sideData);
+  h.each(d => {
+    if (d.data.id === "__side") return;
+    const n = MAP.nodes[d.data.id];
+    d.w = textWidth(label(n), false) + PAD_X * 2 + 14;
+  });
+  d3.tree().nodeSize([H + V_GAP, 1]).separation((a, b) => a.parent === b.parent ? 1 : 1.25)(h);
+  // horizontal position = sum of the widest node in each earlier column
+  const colW = [];
+  h.each(d => { if (d.depth > 0) colW[d.depth] = Math.max(colW[d.depth] || 0, d.w); });
+  const offset = [0, 0];
+  for (let i = 1; i < colW.length; i++) offset[i + 1] = offset[i] + colW[i] + H_GAP;
+  h.each(d => { d.px = dir * (offset[d.depth] || 0); d.py = d.x; });
+  return h;
+}
+
+// nodes linked to the selected one are revealed for this view only (not saved)
+let tempOpen = new Set();
+function computeTempOpen() {
+  tempOpen = new Set();
+  if (!current) return;
+  (MAP.links || []).forEach(l => {
+    if (l.from !== current && l.to !== current) return;
+    const other = l.from === current ? l.to : l.from;
+    pathTo(other).slice(0, -1).forEach(a => tempOpen.add(a));
+  });
+}
+
+function render() {
+  computeTempOpen();
+  const root = MAP.nodes[MAP.root];
+  const rootW = textWidth(root.title, true) + PAD_X * 2 + 20;
+  const kids = kidsOf(MAP.root);
+  const right = kids.filter((_, i) => i < Math.ceil(kids.length / 2));
+  const left = kids.filter((_, i) => i >= Math.ceil(kids.length / 2));
+  const colorOf = {};
+  kids.forEach((id, i) => {
+    const col = BRANCH_COLORS[i % BRANCH_COLORS.length];
+    const paint = x => { colorOf[x] = col; kidsOf(x).forEach(paint); };
+    paint(id);
+  });
+  colorOf[MAP.root] = "var(--color-base-content)";
+  window.__colorOf = colorOf;
+
+  const nodes = [{ id: MAP.root, x: 0, y: 0, w: rootW, h: ROOT_H, side: 0 }];
+  const links = [];
+  [[right, 1], [left, -1]].forEach(([ids, dir]) => {
+    if (!ids.length) return;
+    const h = layoutSide(buildSide(ids), dir);
+    const startX = dir * (rootW / 2 + H_GAP);
+    h.each(d => {
+      if (d.depth === 0) return;
+      const x = startX + d.px + (dir < 0 ? -d.w : 0);
+      nodes.push({ id: d.data.id, x, y: d.py, w: d.w, h: H, side: dir });
+    });
+  });
+  const pos = Object.fromEntries(nodes.map(n => [n.id, n]));
+  nodes.forEach(n => {
+    const p = MAP.nodes[n.id].parent;
+    if (p == null || !pos[p]) return;
+    const a = pos[p];
+    const sx = p === MAP.root ? (n.side > 0 ? a.w / 2 : -a.w / 2) : (n.side > 0 ? a.x + a.w : a.x);
+    const tx = n.side > 0 ? n.x : n.x + n.w;
+    links.push({ id: n.id, sx, sy: a.y, tx, ty: n.y, color: colorOf[n.id] });
+  });
+
+  const linkPath = d => { const mx = (d.sx + d.tx) / 2; return `M${d.sx},${d.sy} C${mx},${d.sy} ${mx},${d.ty} ${d.tx},${d.ty}`; };
+  world.selectAll("path.link").data(links, d => d.id).join("path")
+    .attr("class", "link").attr("stroke", d => d.color).attr("d", linkPath);
+
+  drawCrossLinks(pos, colorOf);
+
+  const g = world.selectAll("g.node").data(nodes, d => d.id).join(enter => {
+    const e = enter.append("g");
+    e.append("rect").attr("class", "pill");
+    e.append("circle").attr("class", "status");
+    e.append("text").attr("class", "label");
+    e.append("text").attr("class", "flag");
+    e.append("text").attr("class", "readmark");
+    const hb = e.append("g").attr("class", "hlbadge");
+    hb.append("circle").attr("r", 8); hb.append("text").attr("text-anchor", "middle").attr("dominant-baseline", "central");
+    const t = e.append("g").attr("class", "toggle");
+    t.append("circle").attr("r", 10);
+    t.append("text").attr("text-anchor", "middle");
+    return e;
+  });
+  g.attr("class", d => {
+    const n = MAP.nodes[d.id];
+    return `node ${d.id === MAP.root ? "root" : ""} ${n.status} ${d.id === current ? "active" : ""} ${readSet.has(d.id) && d.id !== MAP.root ? "read" : ""}`;
+  })
+   .attr("transform", d => d.id === MAP.root ? `translate(${-d.w / 2},${-d.h / 2})` : `translate(${d.x},${d.y - d.h / 2})`)
+   .on("click", (e, d) => { e.stopPropagation(); select(d.id); });
+
+  g.select("rect.pill")
+    .attr("width", d => d.w).attr("height", d => d.h).attr("rx", d => d.h / 2)
+    .attr("fill", d => d.id === MAP.root ? "var(--color-base-content)" : `color-mix(in srgb, ${colorOf[d.id]} 12%, var(--color-base-100))`)
+    .attr("stroke", d => d.id === MAP.root ? "var(--color-base-content)" : colorOf[d.id]);
+  g.select("circle.status")
+    .attr("cx", 14).attr("cy", d => d.h / 2).attr("r", d => d.id === MAP.root ? 0 : 4.5)
+    .attr("fill", d => { const s = MAP.nodes[d.id].status; return s === "known" ? "var(--color-success)" : s === "expanded" ? colorOf[d.id] : "transparent"; })
+    .attr("stroke", d => colorOf[d.id]).attr("stroke-width", 1.4);
+  g.select("text.label")
+    .attr("x", d => d.id === MAP.root ? d.w / 2 : 26).attr("y", d => d.h / 2)
+    .attr("text-anchor", d => d.id === MAP.root ? "middle" : "start")
+    .attr("fill", d => d.id === MAP.root ? "var(--color-base-100)" : "var(--color-base-content)")
+    .text(d => d.id === MAP.root ? MAP.nodes[d.id].title : label(MAP.nodes[d.id]));
+  const hlCount = id => highlights.filter(h => h.node === id).length;
+  g.select("g.hlbadge").style("display", d => hlCount(d.id) ? null : "none")
+    .attr("transform", d => `translate(${d.id === MAP.root ? 4 : 2},${0})`)
+    .on("click", (e, d) => { e.stopPropagation(); toggleDock(true); document.getElementById("hl-only-node").checked = false; renderNotes(d.id); });
+  g.select("g.hlbadge text").text(d => hlCount(d.id));
+  g.select("text.readmark").attr("x", d => d.w - 14).attr("y", d => d.h / 2 + 1).attr("dominant-baseline", "central")
+    .text(d => readSet.has(d.id) && d.id !== MAP.root ? "✓" : "");
+  g.select("text.flag")
+    .attr("x", d => d.w - 12).attr("y", 2).attr("fill", "var(--color-error)").attr("font-weight", 700)
+    .text(d => fcOf(MAP.nodes[d.id]) === "issues" ? "!" : "");
+
+  const tog = g.select("g.toggle")
+    .style("display", d => d.id !== MAP.root && kidsOf(d.id).length ? null : "none")
+    .attr("transform", d => d.side > 0 ? `translate(${d.w + 12},${d.h / 2})` : `translate(${-12},${d.h / 2})`)
+    .on("click", (e, d) => { e.stopPropagation(); toggle(d.id); });
+  tog.select("circle").attr("fill", "var(--color-base-100)").attr("stroke", d => colorOf[d.id]).attr("stroke-width", 1.4);
+  tog.select("text").attr("y", 0.5).attr("fill", d => colorOf[d.id])
+    .text(d => openSet.has(d.id) ? "−" : kidsOf(d.id).length);
+
+  return nodes;
+}
+
+let lastNodes = [];
+function redraw() { lastNodes = render(); renderStats(); }
+
+function fitView(animate = true) {
+  if (!lastNodes.length) return;
+  const xs = lastNodes.flatMap(n => n.id === MAP.root ? [-n.w / 2, n.w / 2] : [n.x - 24, n.x + n.w + 24]);
+  const ys = lastNodes.flatMap(n => [n.y - n.h, n.y + n.h]);
+  const [x0, x1, y0, y1] = [d3.min(xs), d3.max(xs), d3.min(ys), d3.max(ys)];
+  const box = document.getElementById("canvas").getBoundingClientRect();
+  const panelW = document.getElementById("panel").classList.contains("closed") ? 0 : document.getElementById("panel").offsetWidth;
+  const dock = document.getElementById("notes-dock");
+  const leftPad = dock.classList.contains("hidden") ? 0 : dock.offsetWidth + 24;
+  const w = box.width - panelW - leftPad;
+  const k = Math.min(1.3, 0.88 * Math.min(w / (x1 - x0), box.height / (y1 - y0)));
+  const t = d3.zoomIdentity.translate(leftPad + w / 2 - k * (x0 + x1) / 2, box.height / 2 - k * (y0 + y1) / 2).scale(k);
+  (animate ? svg.transition().duration(350) : svg).call(zoom.transform, t);
+}
+
+function toggle(id) {
+  openSet.has(id) ? openSet.delete(id) : openSet.add(id);
+  saveOpen(); redraw();
+}
+
+function setAllOpen(open) {
+  openSet = new Set([MAP.root]);
+  if (open) Object.keys(MAP.nodes).forEach(id => openSet.add(id));
+  saveOpen(); redraw(); fitView();
+}
+
+function renderStats() {
+  const all = Object.values(MAP.nodes);
+  const count = s => all.filter(n => n.status === s).length;
+  const unchecked = all.filter(n => n.body && fcOf(n) === "unchecked").length;
+  const issues = all.filter(n => fcOf(n) === "issues").length;
+  const corrected = all.filter(n => fcOf(n) === "corrected").length;
+  document.getElementById("map-stats").innerHTML =
+    `<span>${all.length} nodes</span><span>${count("expanded")} มีเนื้อหา</span><span>${count("stub")} stub</span>`
+    + `<span class="text-success">${[...readSet].filter(id => MAP.nodes[id] && MAP.nodes[id].kind !== "factcheck").length}/${all.filter(n => n.kind !== "factcheck").length} อ่านแล้ว</span>`
+    + `<span>${(MAP.links || []).length} เส้นเชื่อม</span><span>${unchecked} ยังไม่ fact check</span>` + (issues ? `<span class="text-error">${issues} พบจุดผิดที่ยังไม่แก้</span>` : "")
+    + (corrected ? `<span class="text-warning">${corrected} แก้ไขแล้ว</span>` : "");
+}
+
+// ---------- detail panel ----------
+function select(id) {
+  current = id;
+  history.replaceState(null, "", "#" + id);
+  // clicking a node reveals its children; deeper levels stay folded until clicked
+  pathTo(id).forEach(p => openSet.add(p));
+  saveOpen();
+  document.getElementById("panel").classList.remove("closed");
+  renderNode(); redraw();
+}
+
+function closePanel() {
+  document.getElementById("panel").classList.add("closed");
+  current = null; history.replaceState(null, "", "#"); redraw();
+}
+
+function renderNode() {
+  const n = MAP.nodes[current];
+  document.title = `${n.title} · learnmap`;
+  document.getElementById("crumbs").innerHTML = "<ul>" + pathTo(current).map(id =>
+    `<li><a onclick="select('${id}')">${esc(MAP.nodes[id].title)}</a></li>`).join("") + "</ul>";
+  document.getElementById("node-title").textContent = n.title;
+  document.getElementById("node-kind").textContent = KIND_LABEL[n.kind] || n.kind;
+  document.getElementById("node-summary").textContent = n.summary || "";
+  document.getElementById("node-body").innerHTML = md(n.body);
+  const fixes = n.children.map(c => [c, MAP.nodes[c]]).filter(([, c]) => c.kind === "correction");
+  const cbox = document.getElementById("correction-box");
+  cbox.classList.toggle("hidden", !fixes.length);
+  cbox.innerHTML = fixes.length ? `<div class="font-semibold mb-1">เนื้อหาด้านล่างมีจุดที่ถูกแก้ไข (ข้อความเดิมคงไว้ตามหลัก append-only)</div>`
+    + fixes.map(([id, c]) => `<div class="mb-1"><a class="link font-medium" onclick="select('${id}')">${esc(c.title)}</a><div class="opacity-80">${esc(c.summary)}</div></div>`).join("") : "";
+  const hide = recallMode && n.body && !revealed.has(current) && n.kind !== "factcheck";
+  document.getElementById("recall-cover").classList.toggle("hidden", !hide);
+  ["node-body", "node-work"].forEach(id => document.getElementById(id).classList.toggle("recall-hide", hide));
+  const mine = (MAP.links || []).filter(l => l.from === current || l.to === current);
+  document.getElementById("links-box").classList.toggle("hidden", !mine.length);
+  document.getElementById("links-list").innerHTML = mine.map(l => {
+    const other = l.from === current ? l.to : l.from;
+    const arrow = l.from === current ? `→ ${esc(l.label)} →` : `← ${esc(l.label)} ←`;
+    return `<a class="link link-hover" onclick="select('${other}')">${arrow} <b>${esc(MAP.nodes[other].title)}</b></a><div class="text-xs opacity-60 ml-4 mb-1">${esc(l.why)}</div>`;
+  }).join("");
+  document.getElementById("explain-input").value = "";
+  document.getElementById("stub-box").classList.toggle("hidden", !!n.body);
+  document.getElementById("work-box").classList.toggle("hidden", !n.link_to_work);
+  document.getElementById("node-work").innerHTML = md(n.link_to_work);
+  document.getElementById("quiz-box").classList.toggle("hidden", n.kind !== "quiz");
+
+  const fc = n.fact_check || {};
+  const conf = n.confidence === "verified"
+    ? `<span class="badge badge-xs badge-success badge-soft">verified</span>`
+    : `<span class="badge badge-xs badge-warning badge-soft">from-memory</span>`;
+  const fcBadge = !n.body || fcOf(n) === "not-applicable" ? "" : {
+    unchecked: `<span class="badge badge-xs badge-ghost">ยังไม่ fact check</span>`,
+    passed: `<span class="badge badge-xs badge-success">fact check ผ่าน ${fc.date || ""}${fc.unverifiable ? ` · ตรวจไม่ได้ ${fc.unverifiable}` : ""}</span>`,
+    issues: `<span class="badge badge-xs badge-error">fact check พบจุดผิด: ผิด ${fc.wrong || 0} · บางส่วน ${fc.partly || 0} (ดู node ลูก)</span>`,
+    corrected: `<span class="badge badge-xs badge-warning">fact check พบจุดผิด ${(fc.wrong || 0) + (fc.partly || 0)} จุด · แก้ไขแล้ว ${fc.corrected_on || ""}</span>`,
+  }[fcOf(n)];
+  const srcs = (n.sources || []).map(s => {
+    const ref = esc(s.ref || "");
+    const lbl = s.type === "vault" ? `[[${ref}]]` : ref;
+    return /^https?:/.test(s.ref || "") ? `<a class="link" href="${ref}" target="_blank">${lbl}</a>` : lbl;
+  });
+  document.getElementById("sources").innerHTML = `${conf} ${fcBadge} ${srcs.length ? "<div class='mt-1'>แหล่ง: " + srcs.join(" · ") + "</div>" : ""}`
+    + (n.asked_by ? `<div class="mt-1">เกิดจาก: ${esc(n.asked_by)}</div>` : "");
+
+  const btn = (lbl, action, cls = "btn-outline") => `<button class="btn btn-sm ${cls}" onclick="queue('${action}')">${lbl}</button>`;
+  const acts = [];
+  if (!n.body) acts.push(btn("อธิบาย node นี้", "fill", "btn-primary"));
+  acts.push(btn("ขยายลึก", "expand", n.body ? "btn-primary" : "btn-outline"));
+  acts.push(btn("ยกตัวอย่าง", "example"), btn("ทำไม?", "why"), btn("ทดสอบตัวเอง", "quiz"));
+  if (n.body && n.kind !== "factcheck") acts.push(btn(fcOf(n) === "unchecked" ? "ตรวจข้อเท็จจริง" : "ตรวจซ้ำ", "factcheck", fcOf(n) === "issues" ? "btn-error btn-outline" : "btn-outline"));
+  if (n.status !== "known") acts.push(btn("รู้แล้ว ✓", "known", "btn-ghost"));
+  acts.unshift(readSet.has(current)
+    ? `<button class="btn btn-sm btn-success" onclick="toggleRead()" title="กด m ก็ได้">อ่านแล้ว ✓ (กดเพื่อยกเลิก)</button>`
+    : `<button class="btn btn-sm btn-outline btn-success" onclick="toggleRead()" title="กด m ก็ได้">ทำเครื่องหมายว่าอ่านแล้ว</button>`);
+  document.getElementById("actions").innerHTML = acts.join("");
+  const checks = n.children.map(c => MAP.nodes[c]).filter(c => c.kind === "factcheck");
+  document.getElementById("fc-box").innerHTML = checks.map((c, i) =>
+    `<details class="collapse collapse-arrow border border-base-300 bg-base-100 mb-2" ${fcOf(n) === "issues" && i === checks.length - 1 ? "open" : ""}>
+      <summary class="collapse-title text-sm font-medium">ผล fact check ${esc(c.created || "")}: ${esc(c.summary)}</summary>
+      <div class="collapse-content prose-lm text-sm">${md(c.body)}</div></details>`).join("");
+  // keep the reading position when the same node re-renders (highlight, read mark, note edits)
+  if (window.__lastNode !== current) document.getElementById("tab-content").scrollTop = 0;
+  window.__lastNode = current;
+  paintHighlights();
+  if (!document.getElementById("notes-dock").classList.contains("hidden")) renderNotes();
+  renderMermaid();
+}
+
+async function renderMermaid() {
+  const blocks = document.querySelectorAll("#panel code.language-mermaid");
+  if (!blocks.length) return;
+  if (!window.mermaid) {
+    await new Promise((ok, bad) => { const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
+    mermaid.initialize({ startOnLoad: false, theme: "neutral", fontFamily: "IBM Plex Sans Thai" });
+  }
+  blocks.forEach(b => { const d = document.createElement("div"); d.className = "mermaid"; d.textContent = b.textContent; b.parentElement.replaceWith(d); });
+  mermaid.run();
+}
+
+// ---------- commands (copied to clipboard, pasted into chat) ----------
+function toast(text) {
+  document.getElementById("toast-text").textContent = text;
+  const t = document.getElementById("toast"); t.classList.remove("hidden");
+  clearTimeout(window.__tt); window.__tt = setTimeout(() => t.classList.add("hidden"), 7000);
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+  const ok = document.execCommand("copy"); ta.remove();
+  ok ? done() : toast(`คัดลอกเองนะ: ${text}`);
+}
+function queue(action, arg) {
+  const argPart = arg ? ` "${arg.replace(/"/g, "'")}"` : "";
+  const cmd = `/create-mind-map ${MAP.slug} ${action} ${current}${argPart}`;
+  const done = () => toast(`คัดลอกแล้ว: ${cmd}  → วางในแชท Claude แล้ว refresh หน้านี้เมื่อเสร็จ`);
+  if (navigator.clipboard) navigator.clipboard.writeText(cmd).then(done, () => fallbackCopy(cmd, done));
+  else fallbackCopy(cmd, done);
+}
+function sendCompare() { const v = document.getElementById("compare-input").value.trim(); if (v) queue("compare", v); }
+function sendAsk() { const v = document.getElementById("ask-input").value.trim(); if (v) queue("ask", v); }
+function sendQuizAnswer() { const v = document.getElementById("quiz-answer").value.trim(); if (v) queue("quiz-answer", v); }
+// ---------- search ----------
+let searchHits = [], searchIdx = 0;
+function plain(s) { return String(s || "").replace(/[`*_#>|\[\]()-]+/g, " ").replace(/\s+/g, " "); }
+function runSearch(q) {
+  const box = document.getElementById("search-results");
+  q = q.trim().toLowerCase();
+  if (!q) { box.classList.add("hidden"); searchHits = []; return; }
+  const terms = q.split(/\s+/);
+  searchHits = Object.entries(MAP.nodes)
+    .filter(([, n]) => n.kind !== "factcheck")
+    .map(([id, n]) => {
+      const title = n.title.toLowerCase(), summary = (n.summary || "").toLowerCase();
+      const body = plain(n.body + " " + (n.link_to_work || "")).toLowerCase();
+      if (!terms.every(t => title.includes(t) || summary.includes(t) || body.includes(t))) return null;
+      const score = terms.reduce((a, t) => a + (title.includes(t) ? 10 : 0) + (summary.includes(t) ? 4 : 0)
+        + Math.min(body.split(t).length - 1, 5), 0);
+      const src = plain(n.body + " " + (n.link_to_work || ""));
+      const at = src.toLowerCase().indexOf(terms[0]);
+      const snippet = at < 0 ? (n.summary || "") : (at > 40 ? "…" : "") + src.slice(Math.max(0, at - 40), at + 80) + "…";
+      return { id, n, score, snippet };
+    }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 30);
+  searchIdx = 0;
+  const mark = t => esc(t).replace(new RegExp("(" + terms.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "gi"), "<mark>$1</mark>");
+  box.innerHTML = searchHits.length ? searchHits.map((h, i) =>
+    `<div class="search-hit px-3 py-2 cursor-pointer border-b border-base-200 ${i === 0 ? "bg-base-200" : ""}" onmousedown="event.preventDefault(); pickSearch(${i})">
+      <div class="font-medium">${mark(h.n.title)} <span class="badge badge-xs badge-ghost">${esc(KIND_LABEL[h.n.kind] || h.n.kind)}</span></div>
+      <div class="text-xs opacity-70">${esc(pathTo(h.id).slice(1, -1).map(x => MAP.nodes[x].title).join(" › "))}</div>
+      <div class="text-xs mt-1">${mark(h.snippet)}</div></div>`).join("")
+    + `<div class="px-3 py-1 text-xs opacity-60">${searchHits.length} ผลลัพธ์ · ↑↓ เลือก · Enter เปิด</div>`
+    : `<div class="px-3 py-2 text-xs opacity-60">ไม่พบ</div>`;
+  box.classList.remove("hidden");
+}
+function pickSearch(i) {
+  const h = searchHits[i]; if (!h) return;
+  document.getElementById("search-results").classList.add("hidden");
+  select(h.id);
+}
+function searchKey(e) {
+  const rows = document.querySelectorAll("#search-results .search-hit");
+  if (e.key === "Escape") { e.target.value = ""; runSearch(""); e.target.blur(); return; }
+  if (e.key === "Enter") { e.preventDefault(); pickSearch(searchIdx); return; }
+  if (!rows.length || !["ArrowDown", "ArrowUp"].includes(e.key)) return;
+  e.preventDefault();
+  rows[searchIdx]?.classList.remove("bg-base-200");
+  searchIdx = (searchIdx + (e.key === "ArrowDown" ? 1 : rows.length - 1)) % rows.length;
+  rows[searchIdx].classList.add("bg-base-200"); rows[searchIdx].scrollIntoView({ block: "nearest" });
+}
+document.getElementById("search-input").addEventListener("blur", () =>
+  setTimeout(() => document.getElementById("search-results").classList.add("hidden"), 150));
+document.getElementById("search-input").addEventListener("focus", e => { if (e.target.value) runSearch(e.target.value); });
+document.addEventListener("keydown", e => {
+  if (e.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+    e.preventDefault(); document.getElementById("search-input").focus();
+  }
+});
+
+// ---------- highlights + notes (kept in this browser) ----------
+const HL_KEY = `learnmap:${MAP.slug}:highlights`;
+let highlights = JSON.parse(localStorage.getItem(HL_KEY) || "[]");
+const saveHL = () => { localStorage.setItem(HL_KEY, JSON.stringify(highlights)); updateHLCount();
+if (localStorage.getItem(DOCK_KEY) === "1") document.getElementById("notes-dock").classList.remove("hidden"); };
+const norm = t => t.replace(/\s+/g, " ").trim();
+function updateHLCount() {
+  document.getElementById("hl-count").textContent = highlights.length;
+  document.getElementById("hl-count-top").textContent = highlights.length;
+}
+function addHighlight() {
+  if (!selectedText || !current) return;
+  const text = norm(selectedText);
+  if (!highlights.some(h => h.node === current && h.text === text)) {
+    highlights = [...highlights, { id: "h" + Date.now().toString(36), node: current, text, note: "", created: new Date().toLocaleString("sv-SE", { hour12: false }).slice(0, 16) }];
+    saveHL();
+  }
+  hideSelbar(); window.getSelection().removeAllRanges();
+  renderNode(); redraw();
+  toast("ไฮไลต์แล้ว · ดูและเขียนโน้ตได้ที่แผง \"โน้ต\" ทางซ้าย หรือกดที่ข้อความสีเหลือง");
+}
+// wrap each saved sentence inside the rendered panel; works across <b>, <code> and other inline tags
+function paintHighlights() {
+  const mine = highlights.filter(h => h.node === current);
+  if (!mine.length) return;
+  ["node-summary", "node-body", "node-work"].forEach(rootId => {
+    const root = document.getElementById(rootId);
+    mine.forEach(h => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const parts = []; let full = "";
+      while (walker.nextNode()) { parts.push({ node: walker.currentNode, start: full.length }); full += walker.currentNode.nodeValue; }
+      // compare on whitespace-collapsed text, then map back to raw offsets
+      const map = []; let flat = "";
+      for (let i = 0; i < full.length; i++) {
+        if (/\s/.test(full[i])) { if (flat.endsWith(" ") || !flat) continue; flat += " "; } else flat += full[i];
+        map.push(i);
+      }
+      const at = flat.indexOf(h.text);
+      if (at < 0) return;
+      const from = map[at], to = map[at + h.text.length - 1] + 1;
+      parts.forEach(({ node, start }) => {
+        const end = start + node.nodeValue.length;
+        const a = Math.max(from, start), b = Math.min(to, end);
+        if (a >= b || node.parentElement.closest("mark.hl")) return;
+        const r = document.createRange(); r.setStart(node, a - start); r.setEnd(node, b - start);
+        const m = document.createElement("mark");
+        m.className = "hl" + (h.note ? " has-note" : ""); m.title = h.note || "ไฮไลต์ (กดเพื่อเปิดโน้ต)";
+        m.onclick = () => openNotes(h.id);
+        try { r.surroundContents(m); } catch (_) { /* partial element overlap: leave unmarked */ }
+      });
+    });
+  });
+}
+const DOCK_KEY = `learnmap:${MAP.slug}:dock`;
+function toggleDock(force) {
+  const dock = document.getElementById("notes-dock");
+  const show = force === undefined ? dock.classList.contains("hidden") : force;
+  dock.classList.toggle("hidden", !show);
+  localStorage.setItem(DOCK_KEY, show ? "1" : "0");
+  if (show) renderNotes();
+}
+function openNotes(focusId) { toggleDock(true); renderNotes(null, focusId); }
+function sourceChip(nid) {
+  const color = (window.__colorOf || {})[nid] || "#999";
+  const trail = pathTo(nid).slice(1, -1).map(x => MAP.nodes[x].title);
+  return `<div class="flex items-start gap-1 text-xs">
+      <span class="dot mt-1" style="background:${color}"></span>
+      <div class="min-w-0"><a class="link link-hover font-semibold" onclick="select('${nid}')">${esc(MAP.nodes[nid].title)}</a>
+      ${trail.length ? `<div class="opacity-60 truncate" title="${esc(trail.join(" › "))}">${esc(trail.join(" › "))}</div>` : ""}</div></div>`;
+}
+function renderNotes(onlyId, focusId) {
+  const q = document.getElementById("hl-filter").value.trim().toLowerCase();
+  const onlyNode = onlyId || (document.getElementById("hl-only-node").checked && current);
+  const list = highlights
+    .filter(h => MAP.nodes[h.node])
+    .filter(h => !onlyNode || h.node === onlyNode)
+    .filter(h => !q || (h.text + " " + h.note + " " + MAP.nodes[h.node].title).toLowerCase().includes(q));
+  const box = document.getElementById("hl-list");
+  if (!list.length) {
+    box.innerHTML = `<p class="text-sm opacity-60">${highlights.length ? "ไม่มีโน้ตที่ตรงเงื่อนไข" : "ยังไม่มีโน้ต · เลือกข้อความในแผงเนื้อหาแล้วกด \"ไฮไลต์\""}</p>`;
+    return;
+  }
+  const order = Object.keys(MAP.nodes);
+  const sorted = [...list].sort((a, b) => order.indexOf(a.node) - order.indexOf(b.node) || a.created.localeCompare(b.created));
+  box.innerHTML = (onlyId ? `<button class="btn btn-ghost btn-xs self-start" onclick="renderNotes()">← แสดงทั้งหมด</button>` : "")
+    + sorted.map(h => `
+    <div id="note-${h.id}" class="note-card rounded-box bg-base-100 border border-base-300 p-2 ${h.id === focusId ? "focus" : ""}"
+         style="--src-color:${(window.__colorOf || {})[h.node] || "#fbbf24"}">
+      ${sourceChip(h.node)}
+      <div class="text-sm mt-2"><mark class="hl cursor-pointer" onclick="select('${h.node}')">${esc(h.text)}</mark></div>
+      <textarea class="textarea textarea-xs w-full mt-2 h-14" placeholder="โน้ตของฉัน…" onchange="setNote('${h.id}', this.value)">${esc(h.note)}</textarea>
+      <div class="flex justify-between items-center text-xs opacity-60">
+        <span>${esc(h.created)}</span>
+        <button class="btn btn-ghost btn-xs" onclick="deleteHighlight('${h.id}')">ลบ</button>
+      </div>
+    </div>`).join("");
+  if (focusId) {
+    const el = document.getElementById("note-" + focusId);
+    if (el) { el.scrollIntoView({ block: "center" }); el.querySelector("textarea").focus(); }
+  }
+}
+function setNote(id, note) {
+  highlights = highlights.map(h => h.id === id ? { ...h, note: note.trim() } : h); saveHL();
+  if (current) renderNode();
+}
+function deleteHighlight(id) {
+  highlights = highlights.filter(h => h.id !== id); saveHL(); renderNotes(); if (current) renderNode(); redraw();
+}
+function exportNotes(mode) {
+  const order = Object.keys(MAP.nodes);
+  const nodes = [...new Set(highlights.map(h => h.node))].filter(n => MAP.nodes[n]).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const md = `# โน้ตจาก ${MAP.title}\n\n` + nodes.map(nid =>
+    `## ${MAP.nodes[nid].title}\n\n` + highlights.filter(h => h.node === nid).map(h =>
+      `> ${h.text}\n` + (h.note ? `\n${h.note}\n` : "")).join("\n")).join("\n");
+  if (mode === "copy") { navigator.clipboard ? navigator.clipboard.writeText(md).then(() => toast("คัดลอกโน้ตเป็น markdown แล้ว")) : fallbackCopy(md, () => toast("คัดลอกแล้ว")); return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([md], { type: "text/markdown" }));
+  a.download = `${MAP.slug}-notes.md`; a.click(); URL.revokeObjectURL(a.href);
+}
+
+function sendExplain() { const v = document.getElementById("explain-input").value.trim(); if (v) queue("explain", v); }
+function setRecall(on) {
+  recallMode = on; localStorage.setItem(`learnmap:${MAP.slug}:recall`, on ? "1" : "0");
+  revealed.clear(); if (current) renderNode();
+}
+function revealBody() { revealed.add(current); renderNode(); }
+function hideSelbar() { document.getElementById("selbar").style.display = "none"; }
+function sendTerm() {
+  if (selectedText) queue("term", selectedText);
+  hideSelbar(); window.getSelection().removeAllRanges();
+}
+document.addEventListener("mouseup", e => {
+  if (e.target.closest && e.target.closest("#selbar")) return;
+  const btn = document.getElementById("selbar");
+  const sel = window.getSelection();
+  const text = sel.toString().trim();
+  // anywhere in the reading panel except form fields
+  const panel = document.getElementById("panel");
+  const inContent = sel.anchorNode && panel.contains(sel.anchorNode)
+    && !["INPUT", "TEXTAREA"].includes((sel.anchorNode.parentElement || {}).tagName)
+    && !(e.target.closest && e.target.closest("textarea, input, button"));
+  const inNotes = document.getElementById("notes-dock").contains(sel.anchorNode);
+  if (!text || !inContent || inNotes || text.length > 1500) { btn.style.display = "none"; return; }
+  selectedText = text;
+  document.getElementById("selbtn").style.display = text.length > 120 ? "none" : "";
+  const r = sel.getRangeAt(0).getBoundingClientRect();
+  btn.style.left = `${r.left}px`; btn.style.top = `${r.bottom + 6}px`; btn.style.display = "inline-flex";
+});
+svg.on("click", () => { if (current) closePanel(); });
+
+// ---------- boot ----------
+document.getElementById("recall-toggle").checked = recallMode;
+updateHLCount();
+document.getElementById("links-toggle").checked = showAllLinks;
+document.getElementById("map-title").textContent = MAP.title;
+document.getElementById("map-context").textContent = MAP.context || "";
+document.fonts.ready.then(() => {
+  const start = location.hash.slice(1);
+  if (MAP.nodes[start]) select(start); else redraw();
+  fitView(false);
+});
+window.addEventListener("resize", () => fitView(false));
+window.addEventListener("hashchange", () => {
+  const id = location.hash.slice(1);
+  if (MAP.nodes[id] && id !== current) select(id);
+});
+</script>
+</body>
+</html>
